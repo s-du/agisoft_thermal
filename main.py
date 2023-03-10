@@ -26,9 +26,11 @@ DOWN_SCALE = 1
 # paths
 basepath = os.path.dirname(__file__)
 PSX_PATH = 'agisoft.psx'
+PC_PATH = 'thermal_point_cloud.laz'
 RGB_IMG_FOLDER = os.path.join(basepath,'test_dataset', 'rgb')
 IR_IMG_FOLDER = os.path.join(basepath,'test_dataset', 'thermal')
 METASHAPE_MODULE_PATH = os.path.join(basepath,'tools','Metashape-2.0.0-cp35.cp36.cp37.cp38-none-win_amd64.whl')
+CALIB_FILE = os.path.join(basepath,'tools', 'camera_calib.xml')
 
 """
 AGISOFT MODULE INSTALLATION PROCEDURE___________________________________________________________________________________
@@ -75,7 +77,6 @@ def run_agisoft_thermal(ir_img_folder, rgb_img_folder):
     for img in image_list:
         ir_list.append(os.path.join(ir_img_folder, img))
 
-
     images = [None] * (len(rgb_list) + len(ir_list))
     images[::2] = rgb_list
     images[1::2] = ir_list
@@ -95,6 +96,36 @@ def run_agisoft_thermal(ir_img_folder, rgb_img_folder):
     # align photos (based on rgb data)
     chk.matchPhotos(downscale=DOWN_SCALE)
     chk.alignCameras()
+
+    # depth maps
+    chk.buildDepthMaps()
+    # model
+    chk.buildModel(source_data=Metashape.DataSource.DepthMapsData)
+    # uv
+    chk.buildUV(mapping_mode=Metashape.GenericMapping)
+
+    # import intrinsic parameters
+    user_calib = Metashape.Calibration()
+    user_calib.load(CALIB_FILE)
+    # load calib to thermal sensor
+    chk.sensors[1].user_calib = user_calib
+    chk.sensors[1].fixed = True
+
+    # change layer index
+    chk.sensors[0].layer_index = 1
+
+    # change master
+    chk.sensors[1].makeMaster()
+
+    # build texture
+    chk.buildTexture(texture_size=8192)
+
+    # sample points
+    chk.buildPointCloud(source_data=Metashape.ModelData ,points_spacing=0.005)
+
+    # export point cloud
+    chk.exportPointCloud(path=PC_PATH, format=Metashape.PointCloudFormatLAZ, crs=Metashape.CoordinateSystem('LOCAL_CS["Local CS",LOCAL_DATUM["Local Datum",0],UNIT["metre",1]]'))
+
     doc.save(path=PSX_PATH)
 
 def compute_camera_path(model_path, output_psx_path):
@@ -119,5 +150,6 @@ def compute_camera_path(model_path, output_psx_path):
     doc.save(path=output_psx_path)
 
 # Run
-run_agisoft_thermal(IR_IMG_FOLDER, RGB_IMG_FOLDER)
+if __name__ == "__main__":
+    run_agisoft_thermal(IR_IMG_FOLDER, RGB_IMG_FOLDER)
 
